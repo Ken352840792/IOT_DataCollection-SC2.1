@@ -1,0 +1,160 @@
+<!-- HLS-Read节点配置界面 -->
+
+<script type="text/javascript">
+    RED.nodes.registerType('hls-read', {
+        category: 'HLS通信',
+        color: '#3FADB5',
+        defaults: {
+            name: {value: ""},
+            deviceId: {value: "", required: true},
+            addresses: {value: []},
+            interval: {value: 1000, validate: RED.validators.number()},
+            server: {value: "127.0.0.1"},
+            port: {value: 8888, validate: RED.validators.number()}
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "bridge-dash.svg",
+        label: function() {
+            return this.name || "HLS读取";
+        },
+        labelStyle: function() {
+            return this.name ? "node_label_italic" : "";
+        },
+        oneditprepare: function() {
+            // 初始化地址列表
+            $("#node-input-addresses-container").css('min-height','120px').css('min-width','450px');
+            $("#node-input-addresses-container").editableList({
+                addItem: function(container, i, opt) {
+                    var row = $('<div/>').appendTo(container);
+                    var row1 = $('<div/>',{style:"display:inline-block;width:100%"}).appendTo(row);
+                    
+                    $('<div/>',{style:"display:inline-block; width:30%; margin-right:10px"}).append(
+                        $('<input/>',{class:"node-input-address",type:"text",placeholder:"地址"}).css("width","100%")
+                    ).appendTo(row1);
+                    
+                    $('<div/>',{style:"display:inline-block; width:25%; margin-right:10px"}).append(
+                        $('<select/>',{class:"node-input-datatype"}).css("width","100%").append(
+                            $("<option></option>").val("bool").text("布尔"),
+                            $("<option></option>").val("int16").text("16位整数"),
+                            $("<option></option>").val("int32").text("32位整数"),
+                            $("<option></option>").val("float").text("浮点数"),
+                            $("<option></option>").val("string").text("字符串")
+                        )
+                    ).appendTo(row1);
+                    
+                    $('<div/>',{style:"display:inline-block; width:35%"}).append(
+                        $('<input/>',{class:"node-input-description",type:"text",placeholder:"描述"}).css("width","100%")
+                    ).appendTo(row1);
+                    
+                    // 设置初始值
+                    if (typeof opt === 'object') {
+                        $('.node-input-address', row).val(opt.address || '');
+                        $('.node-input-datatype', row).val(opt.dataType || 'int16');
+                        $('.node-input-description', row).val(opt.description || '');
+                    }
+                },
+                removable: true,
+                sortable: true
+            });
+            
+            // 加载现有地址配置
+            if (this.addresses) {
+                for (var i = 0; i < this.addresses.length; i++) {
+                    $("#node-input-addresses-container").editableList('addItem', this.addresses[i]);
+                }
+            }
+        },
+        oneditsave: function() {
+            // 保存地址配置
+            var addresses = [];
+            var addressItems = $("#node-input-addresses-container").editableList('items');
+            addressItems.each(function(i) {
+                var address = $(this).find('.node-input-address').val();
+                var dataType = $(this).find('.node-input-datatype').val();
+                var description = $(this).find('.node-input-description').val();
+                if (address) {
+                    addresses.push({
+                        address: address,
+                        dataType: dataType,
+                        description: description
+                    });
+                }
+            });
+            this.addresses = addresses;
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="hls-read">
+    <div class="form-row">
+        <label for="node-input-name"><i class="icon-tag"></i> 名称</label>
+        <input type="text" id="node-input-name" placeholder="节点名称">
+    </div>
+    <div class="form-row">
+        <label for="node-input-deviceId"><i class="icon-tag"></i> 设备ID</label>
+        <input type="text" id="node-input-deviceId" placeholder="设备标识符">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="icon-globe"></i> 服务器</label>
+        <input type="text" id="node-input-server" placeholder="127.0.0.1">
+    </div>
+    <div class="form-row">
+        <label for="node-input-port"><i class="icon-bookmark"></i> 端口</label>
+        <input type="text" id="node-input-port" placeholder="8888">
+    </div>
+    <div class="form-row">
+        <label for="node-input-interval"><i class="icon-clock-o"></i> 间隔(ms)</label>
+        <input type="text" id="node-input-interval" placeholder="1000">
+    </div>
+    <div class="form-row">
+        <label for="node-input-addresses-container" style="width:auto">数据点配置</label>
+        <ol id="node-input-addresses-container"></ol>
+    </div>
+</script>
+
+<script type="text/html" data-help-name="hls-read">
+    <p>从工业设备读取数据的Node-RED节点</p>
+    
+    <h3>配置</h3>
+    <dl class="message-properties">
+        <dt>设备ID <span class="property-type">字符串</span></dt>
+        <dd>要连接的设备标识符</dd>
+        
+        <dt>服务器 <span class="property-type">字符串</span></dt>
+        <dd>HLS-Communication服务器地址，默认127.0.0.1</dd>
+        
+        <dt>端口 <span class="property-type">数字</span></dt>
+        <dd>HLS-Communication服务器端口，默认8888</dd>
+        
+        <dt>间隔 <span class="property-type">数字</span></dt>
+        <dd>读取间隔，单位毫秒，默认1000</dd>
+        
+        <dt>数据点配置 <span class="property-type">数组</span></dt>
+        <dd>要读取的数据点地址、类型和描述</dd>
+    </dl>
+
+    <h3>输入</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">对象</span></dt>
+        <dd>触发读取操作的消息。可以包含动态的设备配置或地址列表。</dd>
+    </dl>
+
+    <h3>输出</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">对象</span></dt>
+        <dd>包含读取结果的消息对象</dd>
+        <dt>payload.deviceId <span class="property-type">字符串</span></dt>
+        <dd>设备标识符</dd>
+        <dt>payload.timestamp <span class="property-type">字符串</span></dt>
+        <dd>数据读取时间戳</dd>
+        <dt>payload.data <span class="property-type">数组</span></dt>
+        <dd>读取的数据点数组</dd>
+        <dt>payload.status <span class="property-type">字符串</span></dt>
+        <dd>操作状态：success/error</dd>
+    </dl>
+
+    <h3>详细信息</h3>
+    <p>此节点通过TCP Socket与HLS-Communication服务通信，实现对工业设备的数据读取。
+    支持多种数据类型和批量读取操作。</p>
+</script>

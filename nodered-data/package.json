@@ -1,0 +1,7 @@
+{
+    "name": "ss-sc-iot-nodered",
+    "description": "Node-RED configuration for SS_SC_IOT project",
+    "version": "0.1.0",
+    "dependencies": {
+    }
+}
