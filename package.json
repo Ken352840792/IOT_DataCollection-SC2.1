@@ -1,0 +1,95 @@
+{
+  "name": "ss-sc-iot",
+  "version": "0.1.0",
+  "description": "滠水采集服务 - 数采盒子硬件及其配套软件系统",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "start:nodered": "node-red",
+    "start:hls-service": "cd src/hls-service && dotnet run",
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/",
+    "build": "echo 'Build process to be implemented'",
+    "clean": "rm -rf node_modules coverage logs/*.log"
+  },
+  "keywords": [
+    "iot",
+    "data-collection",
+    "industrial",
+    "plc",
+    "node-red",
+    "hlscommunication",
+    "modbus",
+    "scada"
+  ],
+  "author": "滠水采集服务项目组",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/ss-sc-iot#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/ss-sc-iot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/ss-sc-iot/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "dependencies": {
+    "node-red": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-node": "^11.1.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.0",
+    "prettier": "^3.2.0",
+    "supertest": "^6.3.0",
+    "husky": "^8.0.0",
+    "lint-staged": "^15.2.0"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS"
+    }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx}",
+      "!src/**/*.test.{js,jsx}",
+      "!src/index.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.{js,jsx}",
+      "**/tests/**/*.spec.{js,jsx}"
+    ]
+  }
+}
