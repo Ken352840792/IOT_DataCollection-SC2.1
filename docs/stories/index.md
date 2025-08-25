@@ -142,7 +142,7 @@
 **任务：** 建立标准化项目结构、Git仓库配置、基础文档编写
 
 #### [故事1.2：Node.js和Node-RED环境配置](./1.2.nodejs-nodered-setup.md) 
-**状态：** Draft | **预估：** 1-2天  
+**状态：** ✅ Done | **实际：** 1天 | **完成时间：** 2025-08-26  
 **任务：** Node.js环境安装、Node-RED平台配置、定制节点开发环境准备
 
 #### [故事1.3：hlscommunication框架集成准备](./1.3.hlscommunication-integration-prep.md)
