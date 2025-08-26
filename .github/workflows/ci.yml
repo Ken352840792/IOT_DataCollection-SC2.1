@@ -1,0 +1,158 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Node.js相关的检查和测试
+  nodejs-checks:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v4
+      
+    - name: 设置Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: 安装依赖
+      run: npm ci
+      
+    - name: 代码风格检查
+      run: npm run lint
+      
+    - name: 代码格式检查
+      run: npm run format:check
+      
+    - name: 运行单元测试
+      run: npm run test:unit
+      
+    - name: 运行集成测试
+      run: npm run test:integration
+      
+    - name: 生成覆盖率报告
+      run: npm run test:coverage
+      
+    - name: 上传覆盖率报告
+      uses: codecov/codecov-action@v3
+      if: matrix.node-version == '22.x'
+      with:
+        file: ./coverage/lcov.info
+        flags: nodejs
+        name: nodejs-coverage
+        
+  # .NET相关的检查和测试
+  dotnet-checks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v4
+      
+    - name: 设置.NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: 恢复依赖
+      run: dotnet restore src/hls-service/HlsService/HlsService.csproj
+      
+    - name: 构建项目
+      run: dotnet build src/hls-service/HlsService/HlsService.csproj --no-restore --configuration Release
+      
+    - name: 运行测试
+      run: |
+        if [ -d "tests/dotnet" ]; then
+          dotnet test tests/dotnet --no-build --configuration Release --verbosity normal
+        else
+          echo "暂无.NET测试，跳过测试步骤"
+        fi
+        
+  # 综合集成测试
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [nodejs-checks, dotnet-checks]
+    
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v4
+      
+    - name: 设置Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: 'npm'
+        
+    - name: 设置.NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: 安装Node.js依赖
+      run: npm ci
+      
+    - name: 构建.NET服务
+      run: dotnet build src/hls-service/HlsService/HlsService.csproj --configuration Release
+      
+    - name: 运行IPC通信测试
+      run: |
+        # 启动HLS服务（后台）
+        cd src/hls-service/HlsService && dotnet run --configuration Release &
+        HLS_PID=$!
+        
+        # 等待服务启动
+        sleep 5
+        
+        # 运行IPC测试
+        cd ../../..
+        node tests/ipc-test-client.js
+        
+        # 停止HLS服务
+        kill $HLS_PID
+        
+  # 安全扫描
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v4
+      
+    - name: 运行npm安全扫描
+      run: npm audit --audit-level moderate
+      continue-on-error: true
+      
+    - name: 运行Snyk安全扫描
+      uses: snyk/actions/node@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+        
+  # 代码质量分析
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: SonarCloud扫描
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      continue-on-error: true
