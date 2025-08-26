@@ -20,7 +20,9 @@
       "Bash(dotnet list:*)",
       "Bash(dotnet clean:*)",
       "Bash(git push:*)",
-      "Bash(npx mocha:*)"
+      "Bash(npx mocha:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout 10 npm run dev)"
     ],
     "deny": [],
     "ask": []

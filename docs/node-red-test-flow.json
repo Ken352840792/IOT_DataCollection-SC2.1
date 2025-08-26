@@ -1,0 +1,344 @@
+[
+  {
+    "id": "test-flow-tab",
+    "type": "tab",
+    "label": "HLS通信测试流程",
+    "disabled": false,
+    "info": "这是一个用于测试 HLS 通信节点与 Modbus 设备通信的示例流程"
+  },
+  {
+    "id": "hls-read-node",
+    "type": "hls-read",
+    "z": "test-flow-tab",
+    "name": "读取Modbus数据",
+    "deviceId": "127.0.0.1",
+    "addresses": [
+      {
+        "address": "40001",
+        "dataType": "Int16",
+        "name": "温度传感器",
+        "description": "环境温度值"
+      },
+      {
+        "address": "40002",
+        "dataType": "Int16",
+        "name": "湿度传感器",
+        "description": "环境湿度值"
+      },
+      {
+        "address": "40003",
+        "dataType": "Float",
+        "name": "压力传感器",
+        "description": "压力值"
+      }
+    ],
+    "interval": 2000,
+    "server": "localhost",
+    "port": 8888,
+    "protocol": "ModbusTcp",
+    "devicePort": 502,
+    "timeout": 5000,
+    "x": 320,
+    "y": 120,
+    "wires": [["debug-read", "process-read-data"]]
+  },
+  {
+    "id": "hls-write-node",
+    "type": "hls-write",
+    "z": "test-flow-tab",
+    "name": "写入Modbus数据",
+    "deviceId": "127.0.0.1",
+    "addresses": [
+      {
+        "address": "40010",
+        "dataType": "Int16",
+        "name": "设定值1",
+        "description": "温度设定值",
+        "defaultValue": "25"
+      },
+      {
+        "address": "40011",
+        "dataType": "Int16",
+        "name": "设定值2",
+        "description": "湿度设定值",
+        "defaultValue": "60"
+      }
+    ],
+    "server": "localhost",
+    "port": 8888,
+    "protocol": "ModbusTcp",
+    "devicePort": 502,
+    "timeout": 5000,
+    "writeMode": "message",
+    "verifyWrites": true,
+    "x": 320,
+    "y": 300,
+    "wires": [["debug-write-success"], ["debug-write-error"]]
+  },
+  {
+    "id": "inject-read",
+    "type": "inject",
+    "z": "test-flow-tab",
+    "name": "手动触发读取",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{}",
+    "payloadType": "json",
+    "x": 100,
+    "y": 120,
+    "wires": [["hls-read-node"]]
+  },
+  {
+    "id": "inject-write-single",
+    "type": "inject",
+    "z": "test-flow-tab",
+    "name": "写入单个值",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"address\":\"40010\",\"value\":30,\"dataType\":\"Int16\"}",
+    "payloadType": "json",
+    "x": 100,
+    "y": 260,
+    "wires": [["hls-write-node"]]
+  },
+  {
+    "id": "inject-write-batch",
+    "type": "inject",
+    "z": "test-flow-tab",
+    "name": "批量写入",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "[{\"address\":\"40010\",\"value\":25,\"dataType\":\"Int16\"},{\"address\":\"40011\",\"value\":65,\"dataType\":\"Int16\"}]",
+    "payloadType": "json",
+    "x": 100,
+    "y": 300,
+    "wires": [["hls-write-node"]]
+  },
+  {
+    "id": "inject-write-map",
+    "type": "inject",
+    "z": "test-flow-tab",
+    "name": "映射格式写入",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"40010\":28,\"40011\":70}",
+    "payloadType": "json",
+    "x": 100,
+    "y": 340,
+    "wires": [["hls-write-node"]]
+  },
+  {
+    "id": "debug-read",
+    "type": "debug",
+    "z": "test-flow-tab",
+    "name": "读取结果",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 560,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "debug-write-success",
+    "type": "debug",
+    "z": "test-flow-tab",
+    "name": "写入成功",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 560,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "debug-write-error",
+    "type": "debug",
+    "z": "test-flow-tab",
+    "name": "写入错误",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 560,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "process-read-data",
+    "type": "function",
+    "z": "test-flow-tab",
+    "name": "处理读取数据",
+    "func": "// 处理从HLS读取节点返回的数据\nif (msg.payload && msg.payload.data) {\n    const data = msg.payload.data;\n    \n    // 创建处理后的数据对象\n    const processedData = {\n        timestamp: msg.payload.timestamp,\n        deviceId: msg.payload.connectionId,\n        values: {}\n    };\n    \n    // 解析每个数据点\n    data.forEach(point => {\n        processedData.values[point.address] = {\n            value: point.value,\n            dataType: point.dataType,\n            quality: point.quality,\n            timestamp: point.timestamp\n        };\n    });\n    \n    // 检查温度是否超过阈值\n    const tempValue = processedData.values['40001'];\n    if (tempValue && tempValue.value > 30) {\n        msg.topic = \"温度报警\";\n        msg.alert = true;\n        node.warn(`温度过高: ${tempValue.value}°C`);\n    }\n    \n    msg.payload = processedData;\n    return msg;\n}\n\nreturn null;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 580,
+    "y": 160,
+    "wires": [["debug-processed"]]
+  },
+  {
+    "id": "debug-processed",
+    "type": "debug",
+    "z": "test-flow-tab",
+    "name": "处理后数据",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 800,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "inject-auto-read",
+    "type": "inject",
+    "z": "test-flow-tab",
+    "name": "自动读取(5秒)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "5",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "{}",
+    "payloadType": "json",
+    "x": 100,
+    "y": 80,
+    "wires": [["hls-read-node"]]
+  },
+  {
+    "id": "comment-setup",
+    "type": "comment",
+    "z": "test-flow-tab",
+    "name": "测试准备说明",
+    "info": "## 测试准备步骤\n\n### 1. 启动 HlsService\n```bash\ncd src/hls-service/HlsService\ndotnet run\n```\n\n### 2. 启动 Modbus 模拟器\n- 在本地开启 Modbus TCP 模拟器\n- 监听端口: 502\n- 设置以下寄存器:\n  - 40001: 温度值 (Int16)\n  - 40002: 湿度值 (Int16)  \n  - 40003: 压力值 (Float)\n  - 40010-40011: 可写入的设定值\n\n### 3. 部署 HLS 节点\n```bash\ncd src/nodes\nnpm install\n```\n\n### 4. 导入此流程\n- 复制整个 JSON 内容\n- 在 Node-RED 中选择 \"Import\" -> \"Clipboard\"\n- 粘贴并部署\n\n### 5. 开始测试\n- 点击注入节点测试读写功能\n- 观察 Debug 输出结果\n- 检查 HlsService 控制台日志",
+    "x": 100,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "status-monitor",
+    "type": "function",
+    "z": "test-flow-tab",
+    "name": "连接状态监控",
+    "func": "// 监控 HLS 节点连接状态\nconst status = msg.payload;\n\n// 记录状态变化\nif (status && status.connectionId) {\n    node.status({fill:\"green\",shape:\"dot\",text:`已连接: ${status.connectionId}`});\n    global.set(\"hls_connection_status\", \"connected\");\n} else {\n    node.status({fill:\"red\",shape:\"ring\",text:\"连接断开\"});\n    global.set(\"hls_connection_status\", \"disconnected\");\n}\n\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 590,
+    "y": 400,
+    "wires": [["debug-status"]]
+  },
+  {
+    "id": "debug-status",
+    "type": "debug",
+    "z": "test-flow-tab",
+    "name": "状态信息",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 800,
+    "y": 400,
+    "wires": []
+  },
+  {
+    "id": "inject-test-sequence",
+    "type": "inject",
+    "z": "test-flow-tab",
+    "name": "执行测试序列",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "start",
+    "payloadType": "str",
+    "x": 100,
+    "y": 440,
+    "wires": [["test-sequence"]]
+  },
+  {
+    "id": "test-sequence",
+    "type": "function",
+    "z": "test-flow-tab",
+    "name": "测试序列",
+    "func": "// 自动化测试序列\nconst sequence = [\n    { delay: 1000, action: \"read\", description: \"执行读取操作\" },\n    { delay: 3000, action: \"write-single\", value: {address: \"40010\", value: 25, dataType: \"Int16\"}, description: \"写入单个值\" },\n    { delay: 2000, action: \"read\", description: \"验证写入结果\" },\n    { delay: 3000, action: \"write-batch\", value: [{address: \"40010\", value: 30, dataType: \"Int16\"}, {address: \"40011\", value: 75, dataType: \"Int16\"}], description: \"批量写入\" },\n    { delay: 2000, action: \"read\", description: \"最终验证\" }\n];\n\nlet step = global.get(\"test_step\") || 0;\n\nif (msg.payload === \"start\") {\n    step = 0;\n    global.set(\"test_step\", step);\n    node.status({fill:\"blue\",shape:\"ring\",text:\"开始测试序列\"});\n}\n\nif (step < sequence.length) {\n    const currentTest = sequence[step];\n    \n    setTimeout(() => {\n        node.status({fill:\"yellow\",shape:\"dot\",text:`步骤 ${step + 1}: ${currentTest.description}`});\n        \n        const outputMsg = {\n            payload: currentTest.value || {},\n            topic: currentTest.action,\n            step: step + 1,\n            description: currentTest.description\n        };\n        \n        // 发送到对应的输出端口\n        if (currentTest.action === \"read\") {\n            node.send([outputMsg, null, null]);\n        } else if (currentTest.action.startsWith(\"write\")) {\n            node.send([null, outputMsg, null]);\n        }\n        \n        // 继续下一步\n        global.set(\"test_step\", step + 1);\n        setTimeout(() => {\n            node.send([null, null, {payload: \"continue\"}]);\n        }, 1000);\n        \n    }, currentTest.delay);\n    \n} else {\n    node.status({fill:\"green\",shape:\"dot\",text:\"测试序列完成\"});\n    global.set(\"test_step\", 0);\n}\n\nreturn null;",
+    "outputs": 3,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 320,
+    "y": 440,
+    "wires": [["hls-read-node"], ["hls-write-node"], ["test-sequence"]]
+  }
+]
