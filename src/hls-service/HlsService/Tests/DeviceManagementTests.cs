@@ -302,14 +302,18 @@ namespace HlsService.Tests
                     PropertyNameCaseInsensitive = true
                 });
                 
-                return response ?? new IpcResponse { Success = false, Error = "Failed to deserialize response" };
+                return response ?? new IpcResponse 
+                { 
+                    Success = false, 
+                    Error = ErrorFactory.CreateInternalError("Failed to deserialize response") 
+                };
             }
             catch (Exception ex)
             {
                 return new IpcResponse
                 {
                     Success = false,
-                    Error = $"Connection error: {ex.Message}"
+                    Error = ErrorFactory.CreateInternalError($"Connection error: {ex.Message}", ex)
                 };
             }
         }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HlsService.Models;
+using HlsService.Api.Controllers;
 using HslCommunication.ModBus;
 
 namespace HlsService.Services
@@ -15,6 +16,8 @@ namespace HlsService.Services
         private readonly ServerConfiguration _config;
         private readonly ServerStatistics _statistics;
         private readonly DeviceManager _deviceManager;
+        private readonly ConnectionController _connectionController;
+        private readonly DataOperationController _dataOperationController;
         private readonly DateTime _serverStartTime;
 
         public MessageProcessor(ServerConfiguration config, ServerStatistics statistics, DeviceManager deviceManager)
@@ -22,6 +25,8 @@ namespace HlsService.Services
             _config = config;
             _statistics = statistics;
             _deviceManager = deviceManager;
+            _connectionController = new ConnectionController(deviceManager, config);
+            _dataOperationController = new DataOperationController(deviceManager, config);
             _serverStartTime = DateTime.UtcNow;
         }
 
@@ -43,76 +48,119 @@ namespace HlsService.Services
 
                 if (request == null)
                 {
-                    return CreateErrorResponse("", "Invalid JSON message format", stopwatch.Elapsed.TotalMilliseconds);
+                    return CreateStandardErrorResponse("", 
+                        ErrorFactory.CreateValidationError("json", "Invalid JSON message format"), 
+                        stopwatch.Elapsed.TotalMilliseconds);
                 }
 
-                // 验证必需字段
-                if (string.IsNullOrEmpty(request.MessageId))
+                // 使用标准化协议验证
+                var validation = MessageValidator.ValidateRequest(request);
+                if (!validation.IsValid)
                 {
-                    return CreateErrorResponse("", "MessageId is required", stopwatch.Elapsed.TotalMilliseconds);
-                }
-
-                if (string.IsNullOrEmpty(request.Command))
-                {
-                    return CreateErrorResponse(request.MessageId, "Command is required", stopwatch.Elapsed.TotalMilliseconds);
+                    return CreateStandardErrorResponse(request.MessageId,
+                        ErrorFactory.CreateConfigurationError("request", validation.Errors),
+                        stopwatch.Elapsed.TotalMilliseconds);
                 }
 
                 // 更新客户端活动状态
                 clientConnection.UpdateActivity();
                 _statistics.IncrementMessagesProcessed();
 
-                // 执行命令
-                var data = await ExecuteCommandAsync(request.Command, request.Data, clientConnection);
-
-                return new IpcResponse
-                {
-                    MessageId = request.MessageId,
-                    Version = _config.ProtocolVersion,
-                    Success = true,
-                    Data = data,
-                    ProcessingTimeMs = stopwatch.Elapsed.TotalMilliseconds
-                };
+                // 路由到相应的控制器处理命令
+                var response = await RouteCommandAsync(request);
+                return response;
             }
             catch (JsonException ex)
             {
-                return CreateErrorResponse(request?.MessageId ?? "", $"JSON parsing error: {ex.Message}", stopwatch.Elapsed.TotalMilliseconds);
+                return CreateStandardErrorResponse(request?.MessageId ?? "",
+                    ErrorFactory.CreateValidationError("json", $"JSON parsing error: {ex.Message}"),
+                    stopwatch.Elapsed.TotalMilliseconds);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[消息处理] 处理消息时出错: {ex.Message}");
-                return CreateErrorResponse(request?.MessageId ?? "", $"Internal server error: {ex.Message}", stopwatch.Elapsed.TotalMilliseconds);
+                return CreateStandardErrorResponse(request?.MessageId ?? "",
+                    ErrorFactory.CreateInternalError($"Internal server error: {ex.Message}", ex),
+                    stopwatch.Elapsed.TotalMilliseconds);
             }
         }
 
         /// <summary>
-        /// 执行具体命令
+        /// 路由命令到相应的控制器
         /// </summary>
-        private async Task<object> ExecuteCommandAsync(string command, object? data, ClientConnection clientConnection)
+        private async Task<IpcResponse> RouteCommandAsync(IpcRequest request)
         {
-            return command.ToLower() switch
+            var command = request.Command.ToLower();
+
+            // 标准化API路由
+            return command switch
             {
-                "ping" => HandlePingCommand(),
-                "status" => HandleStatusCommand(clientConnection),
-                "server_info" => HandleServerInfoCommand(),
-                "connections" => HandleConnectionsCommand(),
-                "test_modbus" => await HandleTestModbusCommand(data),
-                "health_check" => HandleHealthCheckCommand(),
-                "version" => HandleVersionCommand(),
-                "add_device" => await HandleAddDeviceCommand(data),
-                "remove_device" => await HandleRemoveDeviceCommand(data),
-                "connect_device" => await HandleConnectDeviceCommand(data),
-                "disconnect_device" => await HandleDisconnectDeviceCommand(data),
-                "device_status" => await HandleDeviceStatusCommand(data),
-                "device_list" => HandleDeviceListCommand(),
-                "read_data" => await HandleReadDataCommand(data),
-                "write_data" => await HandleWriteDataCommand(data),
-                "test_connection" => await HandleTestConnectionCommand(data),
-                "configure_datapoints" => await HandleConfigureDataPointsCommand(data),
-                "validate_configuration" => HandleValidateConfigurationCommand(data),
-                "get_schemas" => HandleGetSchemasCommand(),
-                "batch_datapoint_operation" => await HandleBatchDataPointOperationCommand(data),
-                _ => new { error = $"Unknown command: {command}", availableCommands = GetAvailableCommands() }
+                // 连接管理API
+                CommandTypes.CONNECT => await _connectionController.ConnectAsync(request),
+                CommandTypes.DISCONNECT => await _connectionController.DisconnectAsync(request),
+                CommandTypes.STATUS => await _connectionController.GetStatusAsync(request),
+                CommandTypes.LIST_CONNECTIONS => await _connectionController.ListConnectionsAsync(request),
+                "validateconnection" => _connectionController.ValidateConnectionParameters(request),
+                
+                // 数据操作API
+                CommandTypes.READ => await _dataOperationController.ReadDataAsync(request),
+                CommandTypes.WRITE => await _dataOperationController.WriteDataAsync(request),
+                CommandTypes.READ_BATCH => await _dataOperationController.ReadBatchAsync(request),
+                CommandTypes.WRITE_BATCH => await _dataOperationController.WriteBatchAsync(request),
+                
+                // 保留旧版本兼容性命令 - 逐步迁移到新API
+                "connect_device" => await _connectionController.ConnectAsync(request),
+                "disconnect_device" => await _connectionController.DisconnectAsync(request),
+                "device_status" => await _connectionController.GetStatusAsync(request),
+                "read_data" => await _dataOperationController.ReadDataAsync(request),
+                "write_data" => await _dataOperationController.WriteDataAsync(request),
+
+                // 其他命令仍使用旧的处理方式
+                _ => await ExecuteCommandAsync(request.Command, request.Data, null)
             };
+        }
+
+        /// <summary>
+        /// 执行具体命令（旧版本兼容性）
+        /// </summary>
+        private async Task<IpcResponse> ExecuteCommandAsync(string command, object? data, ClientConnection? clientConnection)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            
+            try
+            {
+                var result = command.ToLower() switch
+                {
+                    "ping" => HandlePingCommand(),
+                    "serverstatus" => HandleServerStatusCommand(clientConnection),
+                    "protocolinfo" => HandleProtocolInfoCommand(),
+                    "connections" => HandleConnectionsCommand(),
+                    "test_modbus" => await HandleTestModbusCommand(data),
+                    "health_check" => HandleHealthCheckCommand(),
+                    "version" => HandleVersionCommand(),
+                    "add_device" => await HandleAddDeviceCommand(data),
+                    "remove_device" => await HandleRemoveDeviceCommand(data),
+                    "device_list" => HandleDeviceListCommand(),
+                    "read" => await HandleReadDataCommand(data),
+                    "write" => await HandleWriteDataCommand(data),
+                    "readbatch" => await HandleReadBatchCommand(data),
+                    "writebatch" => await HandleWriteBatchCommand(data),
+                    "test_connection" => await HandleTestConnectionCommand(data),
+                    "configure_datapoints" => await HandleConfigureDataPointsCommand(data),
+                    "validate_configuration" => HandleValidateConfigurationCommand(data),
+                    "get_schemas" => HandleGetSchemasCommand(),
+                    "batch_datapoint_operation" => await HandleBatchDataPointOperationCommand(data),
+                    _ => new { error = $"Unknown command: {command}", availableCommands = GetAvailableCommands() }
+                };
+
+                return CreateSuccessResponseFromData("", result, stopwatch.Elapsed.TotalMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                return CreateStandardErrorResponse("",
+                    ErrorFactory.CreateInternalError($"Command execution failed: {ex.Message}", ex),
+                    stopwatch.Elapsed.TotalMilliseconds);
+            }
         }
 
         /// <summary>
@@ -129,9 +177,9 @@ namespace HlsService.Services
         }
 
         /// <summary>
-        /// 处理状态查询命令
+        /// 处理服务器状态查询命令
         /// </summary>
-        private object HandleStatusCommand(ClientConnection clientConnection)
+        private object HandleServerStatusCommand(ClientConnection? clientConnection)
         {
             var process = Process.GetCurrentProcess();
             var memoryMB = process.WorkingSet64 / (1024.0 * 1024.0);
@@ -149,29 +197,22 @@ namespace HlsService.Services
         }
 
         /// <summary>
-        /// 处理服务器信息命令
+        /// 处理协议信息命令
         /// </summary>
-        private object HandleServerInfoCommand()
+        private object HandleProtocolInfoCommand()
         {
             return new
             {
-                serverName = "HLS-Communication Service",
-                version = _config.ProtocolVersion,
-                startTime = _serverStartTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                configuration = new
+                protocol = ProtocolVersion.GetVersionInfo(),
+                supportedCommands = CommandTypes.ALL_COMMANDS,
+                constants = new
                 {
-                    port = _config.Port,
-                    host = _config.Host,
-                    maxConnections = _config.MaxConnections,
-                    protocolVersion = _config.ProtocolVersion
+                    maxMessageSize = ProtocolConstants.MAX_MESSAGE_SIZE,
+                    maxBatchSize = ProtocolConstants.MAX_BATCH_SIZE,
+                    defaultTimeout = ProtocolConstants.DEFAULT_TIMEOUT_MS,
+                    maxConnections = ProtocolConstants.MAX_CONCURRENT_CONNECTIONS
                 },
-                environment = new
-                {
-                    dotnetVersion = Environment.Version.ToString(),
-                    osVersion = Environment.OSVersion.ToString(),
-                    machineName = Environment.MachineName,
-                    processorCount = Environment.ProcessorCount
-                }
+                timestamp = DateTime.UtcNow
             };
         }
 
@@ -996,9 +1037,27 @@ namespace HlsService.Services
         }
 
         /// <summary>
-        /// 创建错误响应
+        /// 处理批量读取命令
         /// </summary>
-        private IpcResponse CreateErrorResponse(string messageId, string error, double processingTimeMs)
+        private async Task<object> HandleReadBatchCommand(object? data)
+        {
+            // 批量读取逻辑 - 基于现有的read_data命令扩展
+            return await HandleReadDataCommand(data);
+        }
+
+        /// <summary>
+        /// 处理批量写入命令
+        /// </summary>
+        private async Task<object> HandleWriteBatchCommand(object? data)
+        {
+            // 批量写入逻辑 - 基于现有的write_data命令扩展
+            return await HandleWriteDataCommand(data);
+        }
+
+        /// <summary>
+        /// 创建标准化错误响应
+        /// </summary>
+        private IpcResponse CreateStandardErrorResponse(string messageId, ErrorResponse error, double processingTimeMs)
         {
             return new IpcResponse
             {
@@ -1006,8 +1065,35 @@ namespace HlsService.Services
                 Version = _config.ProtocolVersion,
                 Success = false,
                 Error = error,
-                ProcessingTimeMs = processingTimeMs
+                ProcessingTimeMs = processingTimeMs,
+                Timestamp = DateTime.UtcNow
             };
+        }
+
+        /// <summary>
+        /// 从数据创建成功响应
+        /// </summary>
+        private IpcResponse CreateSuccessResponseFromData(string messageId, object data, double processingTimeMs)
+        {
+            return new IpcResponse
+            {
+                MessageId = messageId,
+                Version = _config.ProtocolVersion,
+                Success = true,
+                Data = data,
+                ProcessingTimeMs = processingTimeMs,
+                Timestamp = DateTime.UtcNow
+            };
+        }
+
+        /// <summary>
+        /// 创建错误响应（向后兼容）
+        /// </summary>
+        private IpcResponse CreateErrorResponse(string messageId, string error, double processingTimeMs)
+        {
+            return CreateStandardErrorResponse(messageId,
+                ErrorFactory.CreateInternalError(error),
+                processingTimeMs);
         }
 
         /// <summary>

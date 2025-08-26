@@ -9,8 +9,11 @@
       deviceId: { value: '', required: true },
       addresses: { value: [] },
       interval: { value: 1000, validate: RED.validators.number() },
-      server: { value: '127.0.0.1' },
+      server: { value: 'localhost' },
       port: { value: 8888, validate: RED.validators.number() },
+      protocol: { value: 'ModbusTcp' },
+      devicePort: { value: 502, validate: RED.validators.number() },
+      timeout: { value: 5000, validate: RED.validators.number() }
     },
     inputs: 1,
     outputs: 1,
@@ -43,11 +46,16 @@
               $('<select/>', { class: 'node-input-datatype' })
                 .css('width', '100%')
                 .append(
-                  $('<option></option>').val('bool').text('布尔'),
-                  $('<option></option>').val('int16').text('16位整数'),
-                  $('<option></option>').val('int32').text('32位整数'),
-                  $('<option></option>').val('float').text('浮点数'),
-                  $('<option></option>').val('string').text('字符串')
+                  $('<option></option>').val('Bool').text('布尔'),
+                  $('<option></option>').val('Int16').text('16位整数'),
+                  $('<option></option>').val('Int32').text('32位整数'),
+                  $('<option></option>').val('Int64').text('64位整数'),
+                  $('<option></option>').val('UInt16').text('16位无符号整数'),
+                  $('<option></option>').val('UInt32').text('32位无符号整数'),
+                  $('<option></option>').val('UInt64').text('64位无符号整数'),
+                  $('<option></option>').val('Float').text('单精度浮点数'),
+                  $('<option></option>').val('Double').text('双精度浮点数'),
+                  $('<option></option>').val('String').text('字符串')
                 )
             )
             .appendTo(row1);
@@ -65,7 +73,7 @@
           // 设置初始值
           if (typeof opt === 'object') {
             $('.node-input-address', row).val(opt.address || '');
-            $('.node-input-datatype', row).val(opt.dataType || 'int16');
+            $('.node-input-datatype', row).val(opt.dataType || 'Int16');
             $('.node-input-description', row).val(opt.description || '');
           }
         },
@@ -106,22 +114,44 @@
     <label for="node-input-name"><i class="icon-tag"></i> 名称</label>
     <input type="text" id="node-input-name" placeholder="节点名称" />
   </div>
+  
+  <div class="form-tips"><b>HLS通信服务配置</b></div>
   <div class="form-row">
-    <label for="node-input-deviceId"><i class="icon-tag"></i> 设备ID</label>
-    <input type="text" id="node-input-deviceId" placeholder="设备标识符" />
+    <label for="node-input-server"><i class="icon-globe"></i> 服务器地址</label>
+    <input type="text" id="node-input-server" placeholder="localhost" />
   </div>
   <div class="form-row">
-    <label for="node-input-server"><i class="icon-globe"></i> 服务器</label>
-    <input type="text" id="node-input-server" placeholder="127.0.0.1" />
-  </div>
-  <div class="form-row">
-    <label for="node-input-port"><i class="icon-bookmark"></i> 端口</label>
+    <label for="node-input-port"><i class="icon-bookmark"></i> 服务端口</label>
     <input type="text" id="node-input-port" placeholder="8888" />
   </div>
   <div class="form-row">
-    <label for="node-input-interval"><i class="icon-clock-o"></i> 间隔(ms)</label>
+    <label for="node-input-timeout"><i class="icon-clock-o"></i> 超时(ms)</label>
+    <input type="text" id="node-input-timeout" placeholder="5000" />
+  </div>
+  
+  <div class="form-tips"><b>目标设备配置</b></div>
+  <div class="form-row">
+    <label for="node-input-deviceId"><i class="icon-tag"></i> 设备IP地址</label>
+    <input type="text" id="node-input-deviceId" placeholder="192.168.1.100" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-protocol"><i class="icon-random"></i> 通信协议</label>
+    <select id="node-input-protocol">
+      <option value="ModbusTcp">Modbus TCP</option>
+      <option value="OpcUa">OPC UA</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-input-devicePort"><i class="icon-bookmark"></i> 设备端口</label>
+    <input type="text" id="node-input-devicePort" placeholder="502" />
+  </div>
+  
+  <div class="form-tips"><b>读取配置</b></div>
+  <div class="form-row">
+    <label for="node-input-interval"><i class="icon-clock-o"></i> 读取间隔(ms)</label>
     <input type="text" id="node-input-interval" placeholder="1000" />
   </div>
+  
   <div class="form-row">
     <label for="node-input-addresses-container" style="width:auto">数据点配置</label>
     <ol id="node-input-addresses-container"></ol>

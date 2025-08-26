@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Net.Sockets;
 
 namespace HlsService.Models
 {
@@ -74,52 +75,159 @@ namespace HlsService.Models
     }
 
     /// <summary>
-    /// 预定义的错误代码常量
+    /// 标准化错误代码常量（按类别组织）
     /// </summary>
     public static class ErrorCodes
     {
-        // 参数验证错误
-        public const string INVALID_PARAMETER = "INVALID_PARAMETER";
-        public const string MISSING_PARAMETER = "MISSING_PARAMETER";
-        public const string INVALID_FORMAT = "INVALID_FORMAT";
-        public const string INVALID_RANGE = "INVALID_RANGE";
+        // 系统级错误 (1xxx)
+        public const string SYSTEM_ERROR = "1000";
+        public const string INVALID_REQUEST = "1001";
+        public const string INVALID_PARAMETER = "1002";
+        public const string PERMISSION_DENIED = "1003";
+        public const string MISSING_PARAMETER = "1004";
+        public const string INVALID_FORMAT = "1005";
+        public const string INVALID_RANGE = "1006";
+        public const string RESOURCE_EXHAUSTED = "1007";
+        public const string SERVICE_UNAVAILABLE = "1008";
+        public const string OPERATION_NOT_SUPPORTED = "1009";
 
-        // 设备相关错误
-        public const string DEVICE_NOT_FOUND = "DEVICE_NOT_FOUND";
-        public const string DEVICE_ALREADY_EXISTS = "DEVICE_ALREADY_EXISTS";
-        public const string DEVICE_NOT_CONNECTED = "DEVICE_NOT_CONNECTED";
-        public const string DEVICE_CONNECTION_FAILED = "DEVICE_CONNECTION_FAILED";
-        public const string DEVICE_TIMEOUT = "DEVICE_TIMEOUT";
-        public const string DEVICE_PROTOCOL_ERROR = "DEVICE_PROTOCOL_ERROR";
+        // 设备连接错误 (2xxx)
+        public const string DEVICE_NOT_FOUND = "2001";
+        public const string DEVICE_OFFLINE = "2002";
+        public const string CONNECTION_TIMEOUT = "2003";
+        public const string CONNECTION_FAILED = "2004";
+        public const string DEVICE_ALREADY_EXISTS = "2005";
+        public const string DEVICE_NOT_CONNECTED = "2006";
+        public const string DEVICE_PROTOCOL_ERROR = "2007";
+        public const string NETWORK_UNREACHABLE = "2008";
+        public const string CONNECTION_REFUSED = "2009";
+        public const string SOCKET_ERROR = "2010";
 
-        // 网络相关错误
-        public const string NETWORK_UNREACHABLE = "NETWORK_UNREACHABLE";
-        public const string CONNECTION_REFUSED = "CONNECTION_REFUSED";
-        public const string NETWORK_TIMEOUT = "NETWORK_TIMEOUT";
-        public const string SOCKET_ERROR = "SOCKET_ERROR";
+        // 数据操作错误 (3xxx)
+        public const string INVALID_ADDRESS = "3001";
+        public const string DATA_TYPE_ERROR = "3002";
+        public const string READ_TIMEOUT = "3003";
+        public const string WRITE_FAILED = "3004";
+        public const string READ_PERMISSION_DENIED = "3005";
+        public const string WRITE_PERMISSION_DENIED = "3006";
+        public const string DATA_CONVERSION_ERROR = "3007";
+        public const string UNSUPPORTED_DATA_TYPE = "3008";
+        public const string DATA_OUT_OF_RANGE = "3009";
 
-        // 数据点位相关错误
-        public const string INVALID_ADDRESS = "INVALID_ADDRESS";
-        public const string UNSUPPORTED_DATA_TYPE = "UNSUPPORTED_DATA_TYPE";
-        public const string READ_PERMISSION_DENIED = "READ_PERMISSION_DENIED";
-        public const string WRITE_PERMISSION_DENIED = "WRITE_PERMISSION_DENIED";
-        public const string DATA_CONVERSION_ERROR = "DATA_CONVERSION_ERROR";
+        // 配置相关错误 (4xxx)
+        public const string INVALID_CONFIGURATION = "4001";
+        public const string CONFIGURATION_NOT_FOUND = "4002";
+        public const string CONFIGURATION_CONFLICT = "4003";
 
-        // 配置相关错误
-        public const string INVALID_CONFIGURATION = "INVALID_CONFIGURATION";
-        public const string CONFIGURATION_NOT_FOUND = "CONFIGURATION_NOT_FOUND";
-        public const string CONFIGURATION_CONFLICT = "CONFIGURATION_CONFLICT";
+        // IPC通信错误 (5xxx)
+        public const string INVALID_MESSAGE_FORMAT = "5001";
+        public const string MESSAGE_TOO_LARGE = "5002";
+        public const string COMMAND_NOT_FOUND = "5003";
+        public const string UNSUPPORTED_PROTOCOL_VERSION = "5004";
+        public const string MESSAGE_ID_INVALID = "5005";
+        public const string MESSAGE_TIMESTAMP_INVALID = "5006";
 
-        // 系统相关错误
-        public const string RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED";
-        public const string INTERNAL_ERROR = "INTERNAL_ERROR";
-        public const string SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE";
-        public const string OPERATION_NOT_SUPPORTED = "OPERATION_NOT_SUPPORTED";
+        // 向后兼容的字符串错误码
+        public const string LEGACY_INVALID_PARAMETER = "INVALID_PARAMETER";
+        public const string LEGACY_MISSING_PARAMETER = "MISSING_PARAMETER";
+        public const string LEGACY_DEVICE_NOT_FOUND = "DEVICE_NOT_FOUND";
+        public const string LEGACY_CONNECTION_FAILED = "DEVICE_CONNECTION_FAILED";
+        public const string LEGACY_INTERNAL_ERROR = "INTERNAL_ERROR";
 
-        // IPC通信错误
-        public const string INVALID_MESSAGE_FORMAT = "INVALID_MESSAGE_FORMAT";
-        public const string MESSAGE_TOO_LARGE = "MESSAGE_TOO_LARGE";
-        public const string COMMAND_NOT_FOUND = "COMMAND_NOT_FOUND";
+        /// <summary>
+        /// 获取错误码的标准描述
+        /// </summary>
+        public static string GetErrorDescription(string errorCode)
+        {
+            return errorCode switch
+            {
+                // 系统级错误
+                SYSTEM_ERROR => "系统内部错误",
+                INVALID_REQUEST => "无效的请求",
+                INVALID_PARAMETER => "参数无效",
+                PERMISSION_DENIED => "权限拒绝",
+                MISSING_PARAMETER => "缺少必需参数",
+                INVALID_FORMAT => "格式无效",
+                INVALID_RANGE => "数值超出有效范围",
+                RESOURCE_EXHAUSTED => "系统资源耗尽",
+                SERVICE_UNAVAILABLE => "服务不可用",
+                OPERATION_NOT_SUPPORTED => "操作不支持",
+
+                // 设备连接错误
+                DEVICE_NOT_FOUND => "设备未找到",
+                DEVICE_OFFLINE => "设备离线",
+                CONNECTION_TIMEOUT => "连接超时",
+                CONNECTION_FAILED => "连接失败",
+                DEVICE_ALREADY_EXISTS => "设备已存在",
+                DEVICE_NOT_CONNECTED => "设备未连接",
+                DEVICE_PROTOCOL_ERROR => "设备通信协议错误",
+                NETWORK_UNREACHABLE => "网络不可达",
+                CONNECTION_REFUSED => "连接被拒绝",
+                SOCKET_ERROR => "套接字错误",
+
+                // 数据操作错误
+                INVALID_ADDRESS => "地址无效",
+                DATA_TYPE_ERROR => "数据类型错误",
+                READ_TIMEOUT => "读取超时",
+                WRITE_FAILED => "写入失败",
+                READ_PERMISSION_DENIED => "读取权限拒绝",
+                WRITE_PERMISSION_DENIED => "写入权限拒绝",
+                DATA_CONVERSION_ERROR => "数据转换错误",
+                UNSUPPORTED_DATA_TYPE => "不支持的数据类型",
+                DATA_OUT_OF_RANGE => "数据超出范围",
+
+                // 配置相关错误
+                INVALID_CONFIGURATION => "配置无效",
+                CONFIGURATION_NOT_FOUND => "配置未找到",
+                CONFIGURATION_CONFLICT => "配置冲突",
+
+                // IPC通信错误
+                INVALID_MESSAGE_FORMAT => "消息格式无效",
+                MESSAGE_TOO_LARGE => "消息过大",
+                COMMAND_NOT_FOUND => "命令未找到",
+                UNSUPPORTED_PROTOCOL_VERSION => "不支持的协议版本",
+                MESSAGE_ID_INVALID => "消息ID无效",
+                MESSAGE_TIMESTAMP_INVALID => "消息时间戳无效",
+
+                _ => "未知错误"
+            };
+        }
+
+        /// <summary>
+        /// 检查错误码是否可重试
+        /// </summary>
+        public static bool IsRetryable(string errorCode)
+        {
+            return errorCode switch
+            {
+                CONNECTION_TIMEOUT or
+                CONNECTION_FAILED or
+                READ_TIMEOUT or
+                WRITE_FAILED or
+                NETWORK_UNREACHABLE or
+                SERVICE_UNAVAILABLE or
+                SYSTEM_ERROR => true,
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// 获取建议的重试延迟时间（毫秒）
+        /// </summary>
+        public static int? GetRetryDelay(string errorCode)
+        {
+            return errorCode switch
+            {
+                CONNECTION_TIMEOUT => 5000,
+                CONNECTION_FAILED => 3000,
+                READ_TIMEOUT => 2000,
+                WRITE_FAILED => 1000,
+                NETWORK_UNREACHABLE => 10000,
+                SERVICE_UNAVAILABLE => 5000,
+                SYSTEM_ERROR => 1000,
+                _ => null
+            };
+        }
     }
 
     /// <summary>
@@ -135,10 +243,11 @@ namespace HlsService.Models
             return new ErrorResponse
             {
                 Code = ErrorCodes.INVALID_PARAMETER,
-                Message = $"Invalid parameter: {parameter}",
-                Details = new List<string> { message },
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.INVALID_PARAMETER),
+                Details = new List<string> { $"Parameter: {parameter}", message },
                 Type = ErrorType.Validation,
-                Retryable = false,
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.INVALID_PARAMETER),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.INVALID_PARAMETER),
                 ResourceId = parameter
             };
         }
@@ -151,9 +260,11 @@ namespace HlsService.Models
             return new ErrorResponse
             {
                 Code = ErrorCodes.MISSING_PARAMETER,
-                Message = $"Required parameter is missing: {parameter}",
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.MISSING_PARAMETER),
+                Details = new List<string> { $"Parameter: {parameter}" },
                 Type = ErrorType.Validation,
-                Retryable = false,
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.MISSING_PARAMETER),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.MISSING_PARAMETER),
                 ResourceId = parameter
             };
         }
@@ -166,9 +277,11 @@ namespace HlsService.Models
             return new ErrorResponse
             {
                 Code = ErrorCodes.DEVICE_NOT_FOUND,
-                Message = $"Device not found: {deviceId}",
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.DEVICE_NOT_FOUND),
+                Details = new List<string> { $"Device ID: {deviceId}" },
                 Type = ErrorType.NotFound,
-                Retryable = false,
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.DEVICE_NOT_FOUND),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.DEVICE_NOT_FOUND),
                 ResourceId = deviceId
             };
         }
@@ -180,12 +293,12 @@ namespace HlsService.Models
         {
             return new ErrorResponse
             {
-                Code = ErrorCodes.DEVICE_CONNECTION_FAILED,
-                Message = $"Failed to connect to device: {deviceId}",
-                Details = new List<string> { reason },
+                Code = ErrorCodes.CONNECTION_FAILED,
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.CONNECTION_FAILED),
+                Details = new List<string> { $"Device ID: {deviceId}", reason },
                 Type = ErrorType.Network,
-                Retryable = true,
-                RetryDelayMs = 5000,
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.CONNECTION_FAILED),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.CONNECTION_FAILED),
                 ResourceId = deviceId
             };
         }
@@ -197,12 +310,13 @@ namespace HlsService.Models
         {
             return new ErrorResponse
             {
-                Code = ErrorCodes.NETWORK_TIMEOUT,
-                Message = $"Operation timed out: {operation}",
-                Details = new List<string> { $"Timeout: {timeoutMs}ms" },
+                Code = ErrorCodes.CONNECTION_TIMEOUT,
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.CONNECTION_TIMEOUT),
+                Details = new List<string> { $"Operation: {operation}", $"Timeout: {timeoutMs}ms" },
                 Type = ErrorType.Timeout,
-                Retryable = true,
-                RetryDelayMs = Math.Min(timeoutMs, 10000)
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.CONNECTION_TIMEOUT),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.CONNECTION_TIMEOUT),
+                ResourceId = operation
             };
         }
 
@@ -211,13 +325,22 @@ namespace HlsService.Models
         /// </summary>
         public static ErrorResponse CreateDataConversionError(string address, string fromType, string toType, string reason = "")
         {
+            var details = new List<string> 
+            { 
+                $"Address: {address}", 
+                $"From: {fromType} To: {toType}" 
+            };
+            if (!string.IsNullOrEmpty(reason))
+                details.Add(reason);
+
             return new ErrorResponse
             {
                 Code = ErrorCodes.DATA_CONVERSION_ERROR,
-                Message = $"Failed to convert data at address {address} from {fromType} to {toType}",
-                Details = string.IsNullOrEmpty(reason) ? new List<string>() : new List<string> { reason },
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.DATA_CONVERSION_ERROR),
+                Details = details,
                 Type = ErrorType.Internal,
-                Retryable = false,
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.DATA_CONVERSION_ERROR),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.DATA_CONVERSION_ERROR),
                 ResourceId = address
             };
         }
@@ -227,13 +350,17 @@ namespace HlsService.Models
         /// </summary>
         public static ErrorResponse CreatePermissionDeniedError(string operation, string resource)
         {
+            var errorCode = operation.ToLower().Contains("read") ? 
+                ErrorCodes.READ_PERMISSION_DENIED : ErrorCodes.WRITE_PERMISSION_DENIED;
+
             return new ErrorResponse
             {
-                Code = operation.ToLower().Contains("read") ? 
-                    ErrorCodes.READ_PERMISSION_DENIED : ErrorCodes.WRITE_PERMISSION_DENIED,
-                Message = $"Permission denied for {operation} on {resource}",
+                Code = errorCode,
+                Message = ErrorCodes.GetErrorDescription(errorCode),
+                Details = new List<string> { $"Operation: {operation}", $"Resource: {resource}" },
                 Type = ErrorType.Authorization,
-                Retryable = false,
+                Retryable = ErrorCodes.IsRetryable(errorCode),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(errorCode),
                 ResourceId = resource
             };
         }
@@ -243,13 +370,17 @@ namespace HlsService.Models
         /// </summary>
         public static ErrorResponse CreateConfigurationError(string configType, List<string> validationErrors)
         {
+            var details = new List<string> { $"Configuration type: {configType}" };
+            details.AddRange(validationErrors);
+
             return new ErrorResponse
             {
                 Code = ErrorCodes.INVALID_CONFIGURATION,
-                Message = $"Invalid {configType} configuration",
-                Details = validationErrors,
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.INVALID_CONFIGURATION),
+                Details = details,
                 Type = ErrorType.Configuration,
-                Retryable = false
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.INVALID_CONFIGURATION),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.INVALID_CONFIGURATION)
             };
         }
 
@@ -262,17 +393,18 @@ namespace HlsService.Models
             if (exception != null)
             {
                 details.Add($"Exception: {exception.GetType().Name}");
-                details.Add($"Stack trace: {exception.StackTrace}");
+                if (!string.IsNullOrEmpty(exception.Message))
+                    details.Add($"Exception Message: {exception.Message}");
             }
 
             return new ErrorResponse
             {
-                Code = ErrorCodes.INTERNAL_ERROR,
-                Message = "Internal server error occurred",
+                Code = ErrorCodes.SYSTEM_ERROR,
+                Message = ErrorCodes.GetErrorDescription(ErrorCodes.SYSTEM_ERROR),
                 Details = details,
                 Type = ErrorType.Internal,
-                Retryable = true,
-                RetryDelayMs = 1000
+                Retryable = ErrorCodes.IsRetryable(ErrorCodes.SYSTEM_ERROR),
+                RetryDelayMs = ErrorCodes.GetRetryDelay(ErrorCodes.SYSTEM_ERROR)
             };
         }
 
@@ -288,6 +420,16 @@ namespace HlsService.Models
                 TimeoutException => CreateTimeoutError(context ?? "operation", 5000),
                 UnauthorizedAccessException => CreatePermissionDeniedError("access", context ?? "resource"),
                 KeyNotFoundException => CreateDeviceNotFoundError(context ?? "unknown"),
+                SocketException => new ErrorResponse
+                {
+                    Code = ErrorCodes.SOCKET_ERROR,
+                    Message = ErrorCodes.GetErrorDescription(ErrorCodes.SOCKET_ERROR),
+                    Details = new List<string> { exception.Message },
+                    Type = ErrorType.Network,
+                    Retryable = true,
+                    RetryDelayMs = 3000,
+                    ResourceId = context
+                },
                 _ => CreateInternalError(exception.Message, exception)
             };
         }

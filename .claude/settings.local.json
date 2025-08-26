@@ -19,7 +19,8 @@
       "Bash(find:*)",
       "Bash(dotnet list:*)",
       "Bash(dotnet clean:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npx mocha:*)"
     ],
     "deny": [],
     "ask": []

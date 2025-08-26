@@ -25,10 +25,11 @@
     }
   },
   "dependencies": {
-    "net": "*"
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "node-red-node-test-helper": "^0.3.4"
+    "node-red-node-test-helper": "^0.3.4",
+    "mocha": "^10.0.0"
   },
   "scripts": {
     "test": "mocha \"test/**/*_spec.js\"",

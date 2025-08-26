@@ -188,16 +188,6 @@ namespace HlsService.Models
         public DataQuality Quality { get; set; } = DataQuality.Good;
     }
 
-    /// <summary>
-    /// 数据质量枚举
-    /// </summary>
-    public enum DataQuality
-    {
-        Good,       // 数据正常
-        Bad,        // 数据异常
-        Uncertain,  // 数据不确定
-        Timeout     // 读取超时
-    }
 
     /// <summary>
     /// 批量数据点位操作请求
