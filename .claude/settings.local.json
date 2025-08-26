@@ -18,7 +18,8 @@
       "Bash(npx husky:*)",
       "Bash(find:*)",
       "Bash(dotnet list:*)",
-      "Bash(dotnet clean:*)"
+      "Bash(dotnet clean:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
