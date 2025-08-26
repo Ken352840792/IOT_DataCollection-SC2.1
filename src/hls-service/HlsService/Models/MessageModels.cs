@@ -74,7 +74,7 @@ namespace HlsService.Models
         /// 错误信息（如果失败）
         /// </summary>
         [JsonPropertyName("error")]
-        public string? Error { get; set; }
+        public ErrorResponse? Error { get; set; }
 
         /// <summary>
         /// 响应时间戳

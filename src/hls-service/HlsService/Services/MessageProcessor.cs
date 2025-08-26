@@ -848,27 +848,44 @@ namespace HlsService.Services
         /// </summary>
         private async Task<object> ExecuteBatchWrite(BatchDataPointRequest request)
         {
-            // 需要从请求中获取写入值，这里简化处理
-            var writeRequest = new DataPointWriteRequest
+            try
             {
-                DeviceId = request.DeviceId,
-                DataPoints = request.DataPoints.Select(dp => new WriteDataPoint
+                // 验证所有数据点都有写入值
+                var invalidPoints = request.DataPoints.Where(dp => dp.Value == null).ToList();
+                if (invalidPoints.Any())
                 {
-                    Address = dp.Address,
-                    Value = 0, // 这里需要从请求中获取实际值
-                    DataType = dp.DataType.ToString()
-                }).ToArray()
-            };
+                    return ErrorFactory.CreateValidationError("dataPoints", 
+                        $"Missing write values for addresses: {string.Join(", ", invalidPoints.Select(p => p.Address))}");
+                }
 
-            var results = await _deviceManager.WriteDeviceDataAsync(writeRequest);
-            
-            return OperationResult<object>.CreateSuccess(new
+                // 创建写入请求
+                var writeRequest = new DataPointWriteRequest
+                {
+                    DeviceId = request.DeviceId,
+                    DataPoints = request.DataPoints.Select(dp => new WriteDataPoint
+                    {
+                        Address = dp.Address,
+                        Value = ConvertValueToDataType(dp.Value!, dp.DataType),
+                        DataType = dp.DataType.ToString()
+                    }).ToArray()
+                };
+
+                var results = await _deviceManager.WriteDeviceDataAsync(writeRequest);
+                
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    deviceId = request.DeviceId,
+                    operation = "write",
+                    results = results,
+                    totalCount = results.Length,
+                    successful = results.Count(r => r.Success),
+                    failed = results.Count(r => !r.Success)
+                });
+            }
+            catch (Exception ex)
             {
-                deviceId = request.DeviceId,
-                operation = "write",
-                results = results,
-                totalCount = results.Length
-            });
+                return OperationResult<object>.CreateFailure(ex, "batch_write");
+            }
         }
 
         /// <summary>
@@ -876,25 +893,76 @@ namespace HlsService.Services
         /// </summary>
         private async Task<object> ExecuteBatchReadWrite(BatchDataPointRequest request)
         {
-            // 分离读和写的点位
-            var readPoints = request.DataPoints.Where(dp => dp.AccessMode == DataPointAccessMode.Read || dp.AccessMode == DataPointAccessMode.ReadWrite).ToList();
-            var writePoints = request.DataPoints.Where(dp => dp.AccessMode == DataPointAccessMode.Write || dp.AccessMode == DataPointAccessMode.ReadWrite).ToList();
-
-            var results = new
+            try
             {
-                deviceId = request.DeviceId,
-                operation = "read_write",
-                readResults = readPoints.Any() ? await _deviceManager.ReadDeviceDataAsync(new DataPointReadRequest
-                {
-                    DeviceId = request.DeviceId,
-                    Addresses = readPoints.Select(dp => dp.Address).ToArray()
-                }) : Array.Empty<ReadResult>(),
-                writeResults = Array.Empty<WriteResult>(), // 简化处理，实际需要实现写入逻辑
-                totalReadCount = readPoints.Count,
-                totalWriteCount = writePoints.Count
-            };
+                // 分离读和写的点位
+                var readPoints = request.DataPoints.Where(dp => dp.AccessMode == DataPointAccessMode.Read || dp.AccessMode == DataPointAccessMode.ReadWrite).ToList();
+                var writePoints = request.DataPoints.Where(dp => (dp.AccessMode == DataPointAccessMode.Write || dp.AccessMode == DataPointAccessMode.ReadWrite) && dp.Value != null).ToList();
 
-            return OperationResult<object>.CreateSuccess(results);
+                // 并发执行读写操作
+                var tasks = new List<Task<object>>();
+
+                // 添加读取任务
+                if (readPoints.Any())
+                {
+                    var readTask = Task.Run(async () =>
+                    {
+                        var readRequest = new DataPointReadRequest
+                        {
+                            DeviceId = request.DeviceId,
+                            Addresses = readPoints.Select(dp => dp.Address).ToArray()
+                        };
+                        return (object)await _deviceManager.ReadDeviceDataAsync(readRequest);
+                    });
+                    tasks.Add(readTask);
+                }
+
+                // 添加写入任务
+                WriteResult[] writeResults = Array.Empty<WriteResult>();
+                if (writePoints.Any())
+                {
+                    var writeTask = Task.Run(async () =>
+                    {
+                        var writeRequest = new DataPointWriteRequest
+                        {
+                            DeviceId = request.DeviceId,
+                            DataPoints = writePoints.Select(dp => new WriteDataPoint
+                            {
+                                Address = dp.Address,
+                                Value = ConvertValueToDataType(dp.Value!, dp.DataType),
+                                DataType = dp.DataType.ToString()
+                            }).ToArray()
+                        };
+                        return (object)await _deviceManager.WriteDeviceDataAsync(writeRequest);
+                    });
+                    tasks.Add(writeTask);
+                }
+
+                // 等待所有任务完成
+                var results = await Task.WhenAll(tasks);
+                
+                var readResults = tasks.Count > 0 && readPoints.Any() ? (ReadResult[])results[0] : Array.Empty<ReadResult>();
+                if (tasks.Count > 1 && writePoints.Any())
+                {
+                    writeResults = (WriteResult[])results[readPoints.Any() ? 1 : 0];
+                }
+
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    deviceId = request.DeviceId,
+                    operation = "read_write",
+                    readResults = readResults,
+                    writeResults = writeResults,
+                    totalReadCount = readPoints.Count,
+                    totalWriteCount = writePoints.Count,
+                    successfulReads = readResults.Count(r => r.Success),
+                    successfulWrites = writeResults.Count(r => r.Success)
+                });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "batch_read_write");
+            }
         }
 
         /// <summary>
@@ -940,6 +1008,84 @@ namespace HlsService.Services
                 Error = error,
                 ProcessingTimeMs = processingTimeMs
             };
+        }
+
+        /// <summary>
+        /// 数据类型转换助手方法
+        /// </summary>
+        private object ConvertValueToDataType(object value, DataPointType targetType)
+        {
+            try
+            {
+                // 处理JsonElement类型的值
+                if (value is JsonElement jsonElement)
+                {
+                    return targetType switch
+                    {
+                        DataPointType.Bool => jsonElement.ValueKind switch
+                        {
+                            JsonValueKind.True => true,
+                            JsonValueKind.False => false,
+                            JsonValueKind.String => bool.Parse(jsonElement.GetString()!),
+                            JsonValueKind.Number => jsonElement.GetDouble() != 0,
+                            _ => throw new InvalidCastException($"Cannot convert {jsonElement.ValueKind} to Bool")
+                        },
+                        DataPointType.Int16 => jsonElement.ValueKind == JsonValueKind.String 
+                            ? short.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetInt16(),
+                        DataPointType.UInt16 => jsonElement.ValueKind == JsonValueKind.String 
+                            ? ushort.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetUInt16(),
+                        DataPointType.Int32 => jsonElement.ValueKind == JsonValueKind.String 
+                            ? int.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetInt32(),
+                        DataPointType.UInt32 => jsonElement.ValueKind == JsonValueKind.String 
+                            ? uint.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetUInt32(),
+                        DataPointType.Int64 => jsonElement.ValueKind == JsonValueKind.String 
+                            ? long.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetInt64(),
+                        DataPointType.UInt64 => jsonElement.ValueKind == JsonValueKind.String 
+                            ? ulong.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetUInt64(),
+                        DataPointType.Float => jsonElement.ValueKind == JsonValueKind.String 
+                            ? float.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetSingle(),
+                        DataPointType.Double => jsonElement.ValueKind == JsonValueKind.String 
+                            ? double.Parse(jsonElement.GetString()!) 
+                            : jsonElement.GetDouble(),
+                        DataPointType.String => jsonElement.ValueKind switch
+                        {
+                            JsonValueKind.String => jsonElement.GetString() ?? string.Empty,
+                            JsonValueKind.Number => jsonElement.GetRawText(),
+                            JsonValueKind.True => "true",
+                            JsonValueKind.False => "false",
+                            _ => jsonElement.GetRawText()
+                        },
+                        _ => throw new NotSupportedException($"Unsupported data type: {targetType}")
+                    };
+                }
+                
+                // 处理其他类型的值
+                return targetType switch
+                {
+                    DataPointType.Bool => Convert.ToBoolean(value),
+                    DataPointType.Int16 => Convert.ToInt16(value),
+                    DataPointType.UInt16 => Convert.ToUInt16(value),
+                    DataPointType.Int32 => Convert.ToInt32(value),
+                    DataPointType.UInt32 => Convert.ToUInt32(value),
+                    DataPointType.Int64 => Convert.ToInt64(value),
+                    DataPointType.UInt64 => Convert.ToUInt64(value),
+                    DataPointType.Float => Convert.ToSingle(value),
+                    DataPointType.Double => Convert.ToDouble(value),
+                    DataPointType.String => value.ToString() ?? string.Empty,
+                    _ => throw new NotSupportedException($"Unsupported data type: {targetType}")
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new ArgumentException($"Cannot convert value '{value}' to {targetType}: {ex.Message}", ex);
+            }
         }
     }
 

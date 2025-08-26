@@ -70,6 +70,12 @@ namespace HlsService.Models
         /// </summary>
         [JsonPropertyName("createdTime")]
         public DateTime CreatedTime { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// 写入值（仅用于写入操作）
+        /// </summary>
+        [JsonPropertyName("value")]
+        public object? Value { get; set; }
     }
 
     /// <summary>
