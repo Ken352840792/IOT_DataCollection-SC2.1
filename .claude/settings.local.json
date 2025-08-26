@@ -15,7 +15,10 @@
       "Bash(dotnet add package:*)",
       "Bash(dotnet build)",
       "Bash(dotnet run:*)",
-      "Bash(npx husky:*)"
+      "Bash(npx husky:*)",
+      "Bash(find:*)",
+      "Bash(dotnet list:*)",
+      "Bash(dotnet clean:*)"
     ],
     "deny": [],
     "ask": []

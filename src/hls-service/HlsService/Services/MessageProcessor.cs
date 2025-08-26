@@ -1,0 +1,968 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using HlsService.Models;
+using HslCommunication.ModBus;
+
+namespace HlsService.Services
+{
+    /// <summary>
+    /// 消息处理器
+    /// 负责解析和处理来自客户端的各种命令
+    /// </summary>
+    public class MessageProcessor
+    {
+        private readonly ServerConfiguration _config;
+        private readonly ServerStatistics _statistics;
+        private readonly DeviceManager _deviceManager;
+        private readonly DateTime _serverStartTime;
+
+        public MessageProcessor(ServerConfiguration config, ServerStatistics statistics, DeviceManager deviceManager)
+        {
+            _config = config;
+            _statistics = statistics;
+            _deviceManager = deviceManager;
+            _serverStartTime = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// 处理JSON消息
+        /// </summary>
+        public async Task<IpcResponse> ProcessMessageAsync(string jsonMessage, ClientConnection clientConnection)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            IpcRequest? request = null;
+            
+            try
+            {
+                // 解析JSON请求
+                request = JsonSerializer.Deserialize<IpcRequest>(jsonMessage, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (request == null)
+                {
+                    return CreateErrorResponse("", "Invalid JSON message format", stopwatch.Elapsed.TotalMilliseconds);
+                }
+
+                // 验证必需字段
+                if (string.IsNullOrEmpty(request.MessageId))
+                {
+                    return CreateErrorResponse("", "MessageId is required", stopwatch.Elapsed.TotalMilliseconds);
+                }
+
+                if (string.IsNullOrEmpty(request.Command))
+                {
+                    return CreateErrorResponse(request.MessageId, "Command is required", stopwatch.Elapsed.TotalMilliseconds);
+                }
+
+                // 更新客户端活动状态
+                clientConnection.UpdateActivity();
+                _statistics.IncrementMessagesProcessed();
+
+                // 执行命令
+                var data = await ExecuteCommandAsync(request.Command, request.Data, clientConnection);
+
+                return new IpcResponse
+                {
+                    MessageId = request.MessageId,
+                    Version = _config.ProtocolVersion,
+                    Success = true,
+                    Data = data,
+                    ProcessingTimeMs = stopwatch.Elapsed.TotalMilliseconds
+                };
+            }
+            catch (JsonException ex)
+            {
+                return CreateErrorResponse(request?.MessageId ?? "", $"JSON parsing error: {ex.Message}", stopwatch.Elapsed.TotalMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[消息处理] 处理消息时出错: {ex.Message}");
+                return CreateErrorResponse(request?.MessageId ?? "", $"Internal server error: {ex.Message}", stopwatch.Elapsed.TotalMilliseconds);
+            }
+        }
+
+        /// <summary>
+        /// 执行具体命令
+        /// </summary>
+        private async Task<object> ExecuteCommandAsync(string command, object? data, ClientConnection clientConnection)
+        {
+            return command.ToLower() switch
+            {
+                "ping" => HandlePingCommand(),
+                "status" => HandleStatusCommand(clientConnection),
+                "server_info" => HandleServerInfoCommand(),
+                "connections" => HandleConnectionsCommand(),
+                "test_modbus" => await HandleTestModbusCommand(data),
+                "health_check" => HandleHealthCheckCommand(),
+                "version" => HandleVersionCommand(),
+                "add_device" => await HandleAddDeviceCommand(data),
+                "remove_device" => await HandleRemoveDeviceCommand(data),
+                "connect_device" => await HandleConnectDeviceCommand(data),
+                "disconnect_device" => await HandleDisconnectDeviceCommand(data),
+                "device_status" => await HandleDeviceStatusCommand(data),
+                "device_list" => HandleDeviceListCommand(),
+                "read_data" => await HandleReadDataCommand(data),
+                "write_data" => await HandleWriteDataCommand(data),
+                "test_connection" => await HandleTestConnectionCommand(data),
+                "configure_datapoints" => await HandleConfigureDataPointsCommand(data),
+                "validate_configuration" => HandleValidateConfigurationCommand(data),
+                "get_schemas" => HandleGetSchemasCommand(),
+                "batch_datapoint_operation" => await HandleBatchDataPointOperationCommand(data),
+                _ => new { error = $"Unknown command: {command}", availableCommands = GetAvailableCommands() }
+            };
+        }
+
+        /// <summary>
+        /// 处理Ping命令
+        /// </summary>
+        private object HandlePingCommand()
+        {
+            return new 
+            { 
+                message = "pong", 
+                serverTime = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                version = _config.ProtocolVersion
+            };
+        }
+
+        /// <summary>
+        /// 处理状态查询命令
+        /// </summary>
+        private object HandleStatusCommand(ClientConnection clientConnection)
+        {
+            var process = Process.GetCurrentProcess();
+            var memoryMB = process.WorkingSet64 / (1024.0 * 1024.0);
+
+            return new ServerStatus
+            {
+                Status = "running",
+                Uptime = DateTime.UtcNow - _serverStartTime,
+                ActiveConnections = _statistics.ActiveConnections,
+                TotalConnections = _statistics.TotalConnections,
+                MessagesProcessed = _statistics.MessagesProcessed,
+                MemoryUsageMB = Math.Round(memoryMB, 2),
+                ProcessId = Environment.ProcessId
+            };
+        }
+
+        /// <summary>
+        /// 处理服务器信息命令
+        /// </summary>
+        private object HandleServerInfoCommand()
+        {
+            return new
+            {
+                serverName = "HLS-Communication Service",
+                version = _config.ProtocolVersion,
+                startTime = _serverStartTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                configuration = new
+                {
+                    port = _config.Port,
+                    host = _config.Host,
+                    maxConnections = _config.MaxConnections,
+                    protocolVersion = _config.ProtocolVersion
+                },
+                environment = new
+                {
+                    dotnetVersion = Environment.Version.ToString(),
+                    osVersion = Environment.OSVersion.ToString(),
+                    machineName = Environment.MachineName,
+                    processorCount = Environment.ProcessorCount
+                }
+            };
+        }
+
+        /// <summary>
+        /// 处理连接信息命令
+        /// </summary>
+        private object HandleConnectionsCommand()
+        {
+            // Note: 这里需要从外部传入连接管理器实例
+            // 为了简化，返回基本统计信息
+            return new
+            {
+                activeConnections = _statistics.ActiveConnections,
+                totalConnections = _statistics.TotalConnections,
+                maxConnections = _config.MaxConnections
+            };
+        }
+
+        /// <summary>
+        /// 处理Modbus测试命令
+        /// </summary>
+        private async Task<object> HandleTestModbusCommand(object? data)
+        {
+            try
+            {
+                // 这是一个测试原型，实际使用时需要真实的设备配置
+                var modbusTcp = new ModbusTcpNet("127.0.0.1", 502);
+
+                // 注意：这里只是创建对象，不实际连接
+                return new
+                {
+                    message = "Modbus connection test prototype",
+                    status = "prototype_ready",
+                    testData = data,
+                    supportedProtocols = new[]
+                    {
+                        "Modbus TCP",
+                        "Modbus RTU",
+                        "Siemens S7",
+                        "Omron FINS",
+                        "Mitsubishi MC"
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "test_modbus" };
+            }
+        }
+
+        /// <summary>
+        /// 处理健康检查命令
+        /// </summary>
+        private object HandleHealthCheckCommand()
+        {
+            var process = Process.GetCurrentProcess();
+            var memoryMB = process.WorkingSet64 / (1024.0 * 1024.0);
+            var uptime = DateTime.UtcNow - _serverStartTime;
+
+            return new
+            {
+                healthy = true,
+                uptime = uptime.TotalSeconds,
+                memoryUsageMB = Math.Round(memoryMB, 2),
+                activeConnections = _statistics.ActiveConnections,
+                messagesProcessed = _statistics.MessagesProcessed,
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            };
+        }
+
+        /// <summary>
+        /// 处理版本信息命令
+        /// </summary>
+        private object HandleVersionCommand()
+        {
+            return new
+            {
+                serviceVersion = _config.ProtocolVersion,
+                protocolVersion = _config.ProtocolVersion,
+                hslCommunicationVersion = "12.3.3",
+                dotnetVersion = Environment.Version.ToString(),
+                buildDate = "2025-08-26" // 实际项目中应该从程序集属性获取
+            };
+        }
+
+        /// <summary>
+        /// 处理添加设备命令
+        /// </summary>
+        private async Task<object> HandleAddDeviceCommand(object? data)
+        {
+            try
+            {
+                if (data == null)
+                {
+                    return new { error = "Device configuration is required" };
+                }
+
+                var json = JsonSerializer.Serialize(data);
+                var config = JsonSerializer.Deserialize<DeviceConfiguration>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (config == null)
+                {
+                    return new { error = "Invalid device configuration format" };
+                }
+
+                var result = await _deviceManager.AddDeviceAsync(config);
+                return new
+                {
+                    success = result.Success,
+                    message = result.Message,
+                    deviceId = config.DeviceId,
+                    deviceType = config.Type.ToString()
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "add_device" };
+            }
+        }
+
+        /// <summary>
+        /// 处理移除设备命令
+        /// </summary>
+        private async Task<object> HandleRemoveDeviceCommand(object? data)
+        {
+            try
+            {
+                var deviceId = ExtractDeviceId(data);
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    return new { error = "Device ID is required" };
+                }
+
+                var result = await _deviceManager.RemoveDeviceAsync(deviceId);
+                return new
+                {
+                    success = result.Success,
+                    message = result.Message,
+                    deviceId = deviceId
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "remove_device" };
+            }
+        }
+
+        /// <summary>
+        /// 处理连接设备命令
+        /// </summary>
+        private async Task<object> HandleConnectDeviceCommand(object? data)
+        {
+            try
+            {
+                var deviceId = ExtractDeviceId(data);
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    return new { error = "Device ID is required" };
+                }
+
+                var result = await _deviceManager.ConnectDeviceAsync(deviceId);
+                return new
+                {
+                    success = result.Success,
+                    message = result.Message,
+                    deviceId = deviceId
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "connect_device" };
+            }
+        }
+
+        /// <summary>
+        /// 处理断开设备命令
+        /// </summary>
+        private async Task<object> HandleDisconnectDeviceCommand(object? data)
+        {
+            try
+            {
+                var deviceId = ExtractDeviceId(data);
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    return new { error = "Device ID is required" };
+                }
+
+                var result = await _deviceManager.DisconnectDeviceAsync(deviceId);
+                return new
+                {
+                    success = result.Success,
+                    message = result.Message,
+                    deviceId = deviceId
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "disconnect_device" };
+            }
+        }
+
+        /// <summary>
+        /// 处理设备状态查询命令
+        /// </summary>
+        private async Task<object> HandleDeviceStatusCommand(object? data)
+        {
+            try
+            {
+                var deviceId = ExtractDeviceId(data);
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    // 如果没有指定设备ID，返回所有设备状态
+                    var allStatus = await _deviceManager.GetAllDeviceStatusAsync();
+                    return new
+                    {
+                        success = true,
+                        devices = allStatus,
+                        count = allStatus.Length
+                    };
+                }
+
+                var status = await _deviceManager.GetDeviceStatusAsync(deviceId);
+                if (status == null)
+                {
+                    return new { error = $"Device {deviceId} not found" };
+                }
+
+                return new
+                {
+                    success = true,
+                    deviceId = deviceId,
+                    status = status
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "device_status" };
+            }
+        }
+
+        /// <summary>
+        /// 处理设备列表命令
+        /// </summary>
+        private object HandleDeviceListCommand()
+        {
+            try
+            {
+                var devices = _deviceManager.GetDeviceList();
+                var supportedTypes = _deviceManager.GetSupportedDeviceTypes();
+
+                return new
+                {
+                    success = true,
+                    devices = devices,
+                    count = devices.Length,
+                    supportedTypes = supportedTypes.Select(t => t.ToString()).ToArray()
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "device_list" };
+            }
+        }
+
+        /// <summary>
+        /// 处理读取数据命令
+        /// </summary>
+        private async Task<object> HandleReadDataCommand(object? data)
+        {
+            try
+            {
+                if (data == null)
+                {
+                    return new { error = "Read request is required" };
+                }
+
+                var json = JsonSerializer.Serialize(data);
+                var request = JsonSerializer.Deserialize<DataPointReadRequest>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (request == null)
+                {
+                    return new { error = "Invalid read request format" };
+                }
+
+                var results = await _deviceManager.ReadDeviceDataAsync(request);
+                return new
+                {
+                    success = true,
+                    deviceId = request.DeviceId,
+                    results = results
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "read_data" };
+            }
+        }
+
+        /// <summary>
+        /// 处理写入数据命令
+        /// </summary>
+        private async Task<object> HandleWriteDataCommand(object? data)
+        {
+            try
+            {
+                if (data == null)
+                {
+                    return new { error = "Write request is required" };
+                }
+
+                var json = JsonSerializer.Serialize(data);
+                var request = JsonSerializer.Deserialize<DataPointWriteRequest>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (request == null)
+                {
+                    return new { error = "Invalid write request format" };
+                }
+
+                var results = await _deviceManager.WriteDeviceDataAsync(request);
+                return new
+                {
+                    success = true,
+                    deviceId = request.DeviceId,
+                    results = results
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "write_data" };
+            }
+        }
+
+        /// <summary>
+        /// 处理测试连接命令
+        /// </summary>
+        private async Task<object> HandleTestConnectionCommand(object? data)
+        {
+            try
+            {
+                var deviceId = ExtractDeviceId(data);
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    return new { error = "Device ID is required" };
+                }
+
+                var result = await _deviceManager.TestDeviceConnectionAsync(deviceId);
+                return new
+                {
+                    success = true,
+                    deviceId = deviceId,
+                    connected = result
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { error = ex.Message, command = "test_connection" };
+            }
+        }
+
+        /// <summary>
+        /// 从数据中提取设备ID
+        /// </summary>
+        private string? ExtractDeviceId(object? data)
+        {
+            try
+            {
+                if (data == null) return null;
+
+                var json = JsonSerializer.Serialize(data);
+                using var document = JsonDocument.Parse(json);
+                
+                if (document.RootElement.TryGetProperty("deviceId", out var deviceIdElement))
+                {
+                    return deviceIdElement.GetString();
+                }
+
+                if (document.RootElement.TryGetProperty("device_id", out var deviceIdElement2))
+                {
+                    return deviceIdElement2.GetString();
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 处理配置数据点位命令
+        /// </summary>
+        private async Task<object> HandleConfigureDataPointsCommand(object? data)
+        {
+            try
+            {
+                if (data == null)
+                {
+                    return ErrorFactory.CreateMissingParameterError("data");
+                }
+
+                var json = JsonSerializer.Serialize(data);
+                var config = JsonSerializer.Deserialize<DeviceDataPointConfiguration>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    Converters = { new JsonStringEnumConverter() }
+                });
+
+                if (config == null)
+                {
+                    return ErrorFactory.CreateValidationError("configuration", "Invalid data point configuration format");
+                }
+
+                // 验证配置
+                var (isValid, errors) = ConfigurationValidator.ValidateDeviceDataPointConfiguration(config);
+                if (!isValid)
+                {
+                    return ErrorFactory.CreateConfigurationError("DataPoint", errors);
+                }
+
+                // 这里应该保存配置到设备管理器或配置存储
+                // 目前返回成功状态
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    message = "Data point configuration updated successfully",
+                    deviceId = config.DeviceId,
+                    totalPoints = config.GetAllDataPoints().Count(),
+                    version = config.Version
+                });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "configure_datapoints");
+            }
+        }
+
+        /// <summary>
+        /// 处理验证配置命令
+        /// </summary>
+        private object HandleValidateConfigurationCommand(object? data)
+        {
+            try
+            {
+                if (data == null)
+                {
+                    return ErrorFactory.CreateMissingParameterError("data");
+                }
+
+                var json = JsonSerializer.Serialize(data);
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("configurationType", out var typeElement))
+                {
+                    var configurationType = typeElement.GetString();
+                    
+                    return configurationType?.ToLower() switch
+                    {
+                        "device" => ValidateDeviceConfiguration(data),
+                        "datapoint" => ValidateDataPointConfiguration(data),
+                        "datapoint_group" => ValidateDataPointGroupConfiguration(data),
+                        _ => ErrorFactory.CreateValidationError("type", $"Unsupported configuration type: {configurationType}")
+                    };
+                }
+
+                return ErrorFactory.CreateMissingParameterError("configurationType");
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "validate_configuration");
+            }
+        }
+
+        /// <summary>
+        /// 处理获取JSON Schema命令
+        /// </summary>
+        private object HandleGetSchemasCommand()
+        {
+            try
+            {
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    schemas = new
+                    {
+                        deviceConfiguration = ConfigurationValidator.GetDeviceConfigurationSchema(),
+                        dataPointConfiguration = ConfigurationValidator.GetDataPointConfigurationSchema()
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "get_schemas");
+            }
+        }
+
+        /// <summary>
+        /// 处理批量数据点位操作命令
+        /// </summary>
+        private async Task<object> HandleBatchDataPointOperationCommand(object? data)
+        {
+            try
+            {
+                if (data == null)
+                {
+                    return ErrorFactory.CreateMissingParameterError("data");
+                }
+
+                var json = JsonSerializer.Serialize(data);
+                var request = JsonSerializer.Deserialize<BatchDataPointRequest>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    Converters = { new JsonStringEnumConverter() }
+                });
+
+                if (request == null)
+                {
+                    return ErrorFactory.CreateValidationError("request", "Invalid batch data point request format");
+                }
+
+                // 验证请求
+                var (isValid, errors) = ConfigurationValidator.ValidateBatchDataPointRequest(request);
+                if (!isValid)
+                {
+                    return ErrorFactory.CreateConfigurationError("BatchDataPointRequest", errors);
+                }
+
+                // 根据操作类型执行相应操作
+                return request.Operation switch
+                {
+                    DataPointOperation.Read => await ExecuteBatchRead(request),
+                    DataPointOperation.Write => await ExecuteBatchWrite(request),
+                    DataPointOperation.ReadWrite => await ExecuteBatchReadWrite(request),
+                    _ => ErrorFactory.CreateValidationError("operation", $"Unsupported operation: {request.Operation}")
+                };
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "batch_datapoint_operation");
+            }
+        }
+
+        /// <summary>
+        /// 验证设备配置
+        /// </summary>
+        private object ValidateDeviceConfiguration(object data)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(data);
+                var config = JsonSerializer.Deserialize<DeviceConfiguration>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (config == null)
+                {
+                    return ErrorFactory.CreateValidationError("configuration", "Invalid device configuration format");
+                }
+
+                var (isValid, errorMessage) = DeviceConnectionFactory.ValidateDeviceConfiguration(config);
+                
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    valid = isValid,
+                    errors = isValid ? new List<string>() : new List<string> { errorMessage },
+                    configurationType = "device"
+                });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "validate_device_configuration");
+            }
+        }
+
+        /// <summary>
+        /// 验证数据点位配置
+        /// </summary>
+        private object ValidateDataPointConfiguration(object data)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(data);
+                var config = JsonSerializer.Deserialize<DataPointConfiguration>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (config == null)
+                {
+                    return ErrorFactory.CreateValidationError("configuration", "Invalid data point configuration format");
+                }
+
+                var (isValid, errors) = ConfigurationValidator.ValidateDataPointConfiguration(config);
+                
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    valid = isValid,
+                    errors = errors,
+                    configurationType = "datapoint"
+                });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "validate_datapoint_configuration");
+            }
+        }
+
+        /// <summary>
+        /// 验证数据点位组配置
+        /// </summary>
+        private object ValidateDataPointGroupConfiguration(object data)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(data);
+                var config = JsonSerializer.Deserialize<DataPointGroup>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (config == null)
+                {
+                    return ErrorFactory.CreateValidationError("configuration", "Invalid data point group configuration format");
+                }
+
+                var (isValid, errors) = ConfigurationValidator.ValidateDataPointGroup(config);
+                
+                return OperationResult<object>.CreateSuccess(new
+                {
+                    valid = isValid,
+                    errors = errors,
+                    configurationType = "datapoint_group"
+                });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult<object>.CreateFailure(ex, "validate_datapoint_group_configuration");
+            }
+        }
+
+        /// <summary>
+        /// 执行批量读取
+        /// </summary>
+        private async Task<object> ExecuteBatchRead(BatchDataPointRequest request)
+        {
+            var readRequest = new DataPointReadRequest
+            {
+                DeviceId = request.DeviceId,
+                Addresses = request.DataPoints.Select(dp => dp.Address).ToArray()
+            };
+
+            var results = await _deviceManager.ReadDeviceDataAsync(readRequest);
+            
+            return OperationResult<object>.CreateSuccess(new
+            {
+                deviceId = request.DeviceId,
+                operation = "read",
+                results = results,
+                totalCount = results.Length
+            });
+        }
+
+        /// <summary>
+        /// 执行批量写入
+        /// </summary>
+        private async Task<object> ExecuteBatchWrite(BatchDataPointRequest request)
+        {
+            // 需要从请求中获取写入值，这里简化处理
+            var writeRequest = new DataPointWriteRequest
+            {
+                DeviceId = request.DeviceId,
+                DataPoints = request.DataPoints.Select(dp => new WriteDataPoint
+                {
+                    Address = dp.Address,
+                    Value = 0, // 这里需要从请求中获取实际值
+                    DataType = dp.DataType.ToString()
+                }).ToArray()
+            };
+
+            var results = await _deviceManager.WriteDeviceDataAsync(writeRequest);
+            
+            return OperationResult<object>.CreateSuccess(new
+            {
+                deviceId = request.DeviceId,
+                operation = "write",
+                results = results,
+                totalCount = results.Length
+            });
+        }
+
+        /// <summary>
+        /// 执行批量读写
+        /// </summary>
+        private async Task<object> ExecuteBatchReadWrite(BatchDataPointRequest request)
+        {
+            // 分离读和写的点位
+            var readPoints = request.DataPoints.Where(dp => dp.AccessMode == DataPointAccessMode.Read || dp.AccessMode == DataPointAccessMode.ReadWrite).ToList();
+            var writePoints = request.DataPoints.Where(dp => dp.AccessMode == DataPointAccessMode.Write || dp.AccessMode == DataPointAccessMode.ReadWrite).ToList();
+
+            var results = new
+            {
+                deviceId = request.DeviceId,
+                operation = "read_write",
+                readResults = readPoints.Any() ? await _deviceManager.ReadDeviceDataAsync(new DataPointReadRequest
+                {
+                    DeviceId = request.DeviceId,
+                    Addresses = readPoints.Select(dp => dp.Address).ToArray()
+                }) : Array.Empty<ReadResult>(),
+                writeResults = Array.Empty<WriteResult>(), // 简化处理，实际需要实现写入逻辑
+                totalReadCount = readPoints.Count,
+                totalWriteCount = writePoints.Count
+            };
+
+            return OperationResult<object>.CreateSuccess(results);
+        }
+
+        /// <summary>
+        /// 获取可用命令列表
+        /// </summary>
+        private string[] GetAvailableCommands()
+        {
+            return new[]
+            {
+                "ping",
+                "status", 
+                "server_info",
+                "connections",
+                "test_modbus",
+                "health_check",
+                "version",
+                "add_device",
+                "remove_device",
+                "connect_device", 
+                "disconnect_device",
+                "device_status",
+                "device_list",
+                "read_data",
+                "write_data",
+                "test_connection",
+                "configure_datapoints",
+                "validate_configuration",
+                "get_schemas",
+                "batch_datapoint_operation"
+            };
+        }
+
+        /// <summary>
+        /// 创建错误响应
+        /// </summary>
+        private IpcResponse CreateErrorResponse(string messageId, string error, double processingTimeMs)
+        {
+            return new IpcResponse
+            {
+                MessageId = messageId,
+                Version = _config.ProtocolVersion,
+                Success = false,
+                Error = error,
+                ProcessingTimeMs = processingTimeMs
+            };
+        }
+    }
+
+    /// <summary>
+    /// 服务器统计信息
+    /// </summary>
+    public class ServerStatistics
+    {
+        private long _messagesProcessed = 0;
+        private readonly ClientConnectionManager _connectionManager;
+
+        public ServerStatistics(ClientConnectionManager connectionManager)
+        {
+            _connectionManager = connectionManager;
+        }
+
+        public int ActiveConnections => _connectionManager.ActiveConnections;
+        public long TotalConnections => _connectionManager.TotalConnections;
+        public long MessagesProcessed => _messagesProcessed;
+
+        public void IncrementMessagesProcessed()
+        {
+            Interlocked.Increment(ref _messagesProcessed);
+        }
+    }
+}

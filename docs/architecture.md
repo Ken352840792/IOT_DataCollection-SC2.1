@@ -20,9 +20,11 @@ Node-RED 环境与定制节点：提供用户界面和数据流编排能力，�
 ## 模块设计
 HLS-Communication 核心服务
 
-职责：专注于底层设备协议解析、数据采集、数据写入等功能。
+职责：专注于底层设备协议解析、设备连接建立、数据采集、数据写入等核心通信功能。
 
-动态配置：该服务将提供一个配置 API，允许 Node-RED 节点传入设备的 IP 地址、端口、协议类型等参数，来动态连接不同的设备。
+动态配置：该服务将提供一个配置接口，允许 Node-RED 节点传入设备的 IP 地址、端口、协议类型等参数，来建立设备连接。
+
+> **架构说明：** 此处的"动态配置"指通过IPC接口接收Node-RED传来的连接参数并建立设备连接，不包括复杂的设备管理、监控或状态管理功能。设备的采集调度、异常处理、重连策略等由Node-RED流程负责，HLS服务专注于提供基础的设备通信能力。
 
 接口：对外提供一套清晰的 API 接口，通过 Socket 接收和响应请求，重点支持批量操作：
 
@@ -32,13 +34,19 @@ HLS-Communication 核心服务
 
 Node-RED 定制节点 (hls-read, hls-write)
 
-职责：提供用户配置界面（如 UI/UX 规范中所述），并将用户的配置和数据点位列表转换为 IPC 请求。
+职责：提供简化的用户配置界面，用于配置设备连接参数和数据点位，并将配置转换为IPC请求发送给HLS服务。
 
-内部逻辑：Node.js 编写，内部包含 Socket 客户端逻辑，负责与核心服务建立连接、发送批量请求和处理批量响应。
+内部逻辑：Node.js 编写，内部包含 Socket 客户端逻辑，负责与核心服务建立连接、发送请求和处理响应。设备的高级管理功能（如重连、监控、调度）由Node-RED流程层面的其他节点处理。
 
 ## 数据流和控制流
-数据采集（hls-read）：
-hls-read 节点 (JS) → Socket 请求（包含点位列表）→ HLS-Communication 核心服务 (C#/Java) → 批量读取设备数据 → 返回 Socket 响应（包含数据集合） → hls-read 节点 (JS) → 进入 Node-RED 数据流。
 
-反向控制（hls-write）：
-Node-RED 数据流 → hls-write 节点 (JS) → Socket 请求（包含点位列表和写入值） → HLS-Communication 核心服务 (C#/Java) → 批量写入设备数据 → 返回 Socket 响应。
+**完整的数据采集流程：**
+定时器节点 → hls-read 节点（配置设备+数据点） → IPC请求（设备连接+数据读取） → HLS-Communication 核心服务 → hlscommunication框架 → 设备 → 数据返回 → hls-read 节点 → Node-RED 数据流（处理/异常检测/存储等）
+
+**反向控制流程：**
+Node-RED 控制逻辑 → hls-write 节点 → IPC请求（写入数据） → HLS-Communication 核心服务 → hlscommunication框架 → 设备 → 写入确认 → hls-write 节点 → Node-RED 后续处理
+
+**架构优势：**
+- HLS服务专注设备通信，Node-RED负责业务逻辑
+- 用户通过Node-RED统一管理所有设备和数据流
+- 利用hlscommunication框架支持丰富的工业协议
